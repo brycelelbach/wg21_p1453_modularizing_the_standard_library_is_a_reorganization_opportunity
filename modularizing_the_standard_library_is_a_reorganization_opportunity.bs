@@ -1,0 +1,330 @@
+<!--
+Copyright (c) 2018 NVIDIA Corporation 
+Author: Bryce Adelstein Lelbach <brycelelbach@gmail.com>
+
+Distributed under the Boost Software License v1.0 (boost.org/LICENSE_1_0.txt)
+-->
+<pre class='metadata'>
+Title: Modularizing the Standard Library is a Reorganization Opportunity
+Shortname: DNNNN
+Revision: 0
+Status: D
+Group: WG21
+Audience: LEWG
+Editor: Bryce Adelstein Lelbach, NVIDIA, brycelelbach@gmail.com
+URL: https://wg21.link/PNNNNR0
+!Source: <a href="https://github.com/brycelelbach/wg21_pNNNN_modularizing_the_standard_library_is_a_reorganization_opportunity/blob/master/modularizing_the_standard_library_is_a_reorganization_opportunity.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/brycelelbach/wg21_pNNNN_modularizing_the_standard_library_is_a_reorganization_opportunity/issues
+Metadata Order: Author, This Version, Source, Issue Tracking, Project, Audience
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+No Abstract: yes
+Boilerplate: style-syntax-highlighting off
+</pre>
+
+<style>
+pre {
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+.ins, ins, ins *, span.ins, span.ins * {
+  background-color: rgb(200, 250, 200);
+  color: rgb(0, 136, 0);
+  text-decoration: none;
+}
+.del, del, del *, span.del, span.del * {
+  background-color: rgb(250, 200, 200);
+  color: rgb(255, 0, 0);
+  text-decoration: line-through;
+  text-decoration-color: rgb(255, 0, 0);
+}
+math, span.math {
+  font-family: serif;
+  font-style: italic;
+}
+ul {
+  list-style-type: "— ";
+}
+blockquote {
+  counter-reset: paragraph;
+}
+div.numbered, div.newnumbered {
+  margin-left: 2em;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+div.numbered:before, div.newnumbered:before {
+  position: absolute;
+  margin-left: -2em;
+  display-style: block;
+}
+div.numbered:before {
+  content: counter(paragraph);
+  counter-increment: paragraph;
+}
+div.newnumbered:before {
+  content: "�";
+}
+div.numbered ul, div.newnumbered ul {
+  counter-reset: list_item;
+}
+div.numbered li, div.newnumbered li {
+  margin-left: 3em;
+}
+div.numbered li:before, div.newnumbered li:before {
+  position: absolute;
+  margin-left: -4.8em;
+  display-style: block;
+}
+div.numbered li:before {
+  content: "(" counter(paragraph) "." counter(list_item) ")";
+  counter-increment: list_item;
+}
+div.newnumbered li:before {
+  content: "(�." counter(list_item) ")";
+  counter-increment: list_item;
+}
+</style>
+
+# Introduction # {#intro}
+
+Modules are coming to C++.
+After the San Diego 2018 C++ committee meeting, it seems quite likely that we
+  will have modules in C++20.
+This feature will have a transformative impact on almost all C++ code.
+Consider the typical "hello world" program in C++:
+
+```
+#include <iostream>
+int main() { std::cout << "hello world\n"; }
+```
+
+"hello world" has remained constant from C++98 through C++17.
+With C++20, however, it may finally change:
+
+```
+import /* ??? */;
+int main() { std::cout << "hello world\n"; }
+```
+
+But, what will `/* ??? */` be?
+
+While we appear to have achieved consensus on a design for the modules language
+  feature, our plan for how and when the C++ standard library will be modularized
+  is not as mature.
+Some proposals have been made ([[P0581R1]] and [[P1212R0]]) and preliminary
+  discussions have taken place ([[2018-Jacksonville-LEWG-P0581R0-Minutes]] and
+  [[2018-San-Diego-EWG-P1212R0-Minutes]]).
+
+# The Need for Reorganization # {#need-for-reorganization}
+
+Modules are a sorely needed opportunity to reorganize the standard library.
+The header-based partitioning of the standard library that we have today has not
+  aged well with the past two decades.
+Some of the pain points include:
+
+- **Transitive Includes:** Standard library headers are allowed to include other
+      standard library headers.
+    There is often implementation divergence in the use of transitive includes.
+    <a spec="StackOverflow-Transitive-Includes-Question" spec-section="#">When users unintentionally rely on transitive includes, they can end up with non portable code.</a>
+- **Overly Coarse Includes:** Over the years, some standard library headers have
+      incrementally evolved into large repositories of facilities that do not
+      necessarily need to be coupled.
+    For example, in C++98, `<functional>` was a simple header with a simple
+      mission: provide unary and binary function objects for operators.
+    Including `<functional>` with GCC 4.1 compiling in C++03 mode added a mere
+      600 lines to your code.
+    Today, `<functional>` is contains a broad set of functional, including
+      `std::function` (which needs type traits and memory management facilities)
+      and `std::*_searcher`s (which need string processing facilities).
+    Including `<functional>` with GCC 8 compiling in C++11 mode adds 44,691
+      lines to your code.
+    That's a lot if all you needed was `std::plus`.
+    Another example of this issue is the ubiquitous `<utility>` header.
+- **Lack of Logical Partitioning:** It is common for C++ programmers to think of
+      each standard library header as encapsulating a component of the standard
+      library.
+    For example, the regex library lives in `<regex>`, the filesystem library
+      lives in `<filesystem>`, and `std::tuple` lives in `<tuple>`.
+    However, many components of the standard library are spread across multiple
+      headers, such as the sequence algorithms.
+    Most sequence algorithms are found in `<algorithm>`, but some are found in
+      `<numeric>` and `<memory>`.
+    This has even been confusing to the committee, which has often forgot to
+      apply updates applicable to all algorithms to the ones in `<numeric>` and
+      `<memory>`.
+    In fact, recently <a spec="cpp" spec-section="/numeric.ops.overview">the section in the standard for the `<numeric>` header</a>
+      has been moved into the `[algorithms]` clause so that it will no longer
+      be overlooked.
+    Additionally, there are some important standard library facilities that live
+      in omnibus headers and can be difficult to locate.
+    Where is `std::pair` (answer: `<utility>`, not `<pair>`)?
+    Where is `std::unique_ptr` (answer: `<memory>`, not `<unique_ptr>`)?
+- **Freestanding:** There is general agreement on the committee that the current
+      definition of the freestanding standard library subset is not particularly
+      useful.
+    At the same time, there are a number of constituencies (embedded,
+      high-frequency trading, kernel/OS development, parallel programming) that
+      desire a useful freestanding standard library and would like to see
+      freestanding overhauled in a future standard ([[P0829R3]], [[P1212R0]],
+      [[P1376R0]]).
+
+# A Rare Opportunity # {#opportunity}
+
+This opportunity to reorganize the standard library is a rare one.
+Standard library implementations make strong backwards compatibility guarantees,
+  so we cannot just decide to move entities from one header to another.
+
+Modules, however, move us away from a header-based model entirely, which gives us
+  a chance to repartition the standard library into more sensible subsets.
+However, we only have one chance to do this.
+Once we ship a modularized standard library, we will find ourselves in the same
+  situation that we have today - we will be unable to reorganize things without
+  breaking backwards compatibility.
+
+This may be our only chance in the lifetime of C++ to reorganize the standard
+  library.
+Thus, it is imperative that we get it right.
+
+## Time is Limited ## {#time-limited}
+
+We are nearing the end of the C++20 development cycle.
+We plan to ship a committee draft of the C++20 standard approximately 6 months
+  from the authoring of this paper.
+
+Integrating new language features into the standard library is one of the harder
+  parts of our standardization work, due in part to its size.
+Recently, we have wisely decided to exercise caution when rolling out new
+  language features in the standard library.
+
+Take concepts as an example.
+In C++20, we have a core concepts library, and a major new piece of the standard
+  library, ranges, uses concepts.
+However, we have not attempted to go through the entire standard library and
+  deployed concepts everywhere in C++20.
+Additionally, we have been conservative in the use of concepts for new library
+  features for C++20; as far as this author is aware, only the ranges library
+  will use concepts.
+It seems likely that in future standards, in places where proper constrained
+  template parameters are desirable, we will either update existing facilities
+  to use concepts (when this can be done without breaking backwards compatibility)
+  or introduce new improved versions of those facilities.
+
+While it may seem counter-intuitive for the standard library to not aggressively
+  embrace new language features, it is in fact the right thing to do in many
+  cases.
+While the impact of new language feature on the library should be considered
+  and evaluated, we should neither make new language features wait for deployment
+  within the standard library nor rush deployment within the standard library.
+When a language feature is ready, so long as we are confident that we will be
+  able to complete deployment of the feature into the standard library in the
+  future, we should be ready to ship it.
+We should not the perfect be the enemy of the good.
+
+# Options for a C++20 Modular Standard Library # {#cpp20-options}
+
+## Don't Modularize the Standard Library in C++20 ## {#cpp20-dont-modularize}
+
+The first and most conservative option would be to not modularize the standard
+  library in C++20.
+Users would access the standard library via legacy imports or via `#include`.
+
+**Pros:** This approach preserves the most freedom for future modularization and
+  presents no risk of shipping something we are unable to change later.
+
+**Cons:** The lack of a modularized standard library may inhibit adoption of
+  modules or lead to implementation-specific standard library modules.
+
+## Modularize the Existing Structure in C++20 and Reorganize Later ## {#cpp20-modularize-existing-structure}
+
+In this approach, we would introduce standard library modules in C++20 that map
+  to the existing standard library headers.
+For each standard library header `<foo>`, we would introduce a `std.header.foo`
+  module.
+
+The use of the `std.header` prefix is intended to reserve syntactic space for the
+  future.
+For example, we might want to have a `std.algorithm` module in the future which
+  contains all the sequence algorithms, while the `std.header.algorithm` module
+  would contain just the sequence algorithms in `<algorithm>`.
+This prefix could be spelled differently, possibly `std.legacy`, `std.old`, or
+  `std.v1`.
+
+**Pros:** This approach provides standard library modules in C++20, preserves a
+  great deal of freedom for future modularization, and presents an acceptably
+  small amount of risk of shipping something we are unable to change later.
+
+**Cons:** The `std.header` modules we'd be shipping would be difficult to get rid
+  of; they'd co-exist with whatever new standard library modules we introduce in
+  the future and potentially preserve some of the problems with the existing
+  standard library structure identified in [[#need-for-reorganization]].
+
+There is one major question with this approach.
+Will we be able to move the definition of an entity between modules without
+  breaking ABI compatibility?
+E.g. If entity `foo` is currently defined in `std.header.bar`, in the future can
+  we introduce a new module `std.foo` which defines `foo`, and modify
+  `std.header.bar` to simply re-export `foo`?
+
+## One Big Module for C++20 ## {#cpp20-one-module}
+
+One option would be to introduce a big `std` module that includes everything in
+  the standard library.
+For finer grained usage, users could either use the modules from
+  [[#cpp20-modularize-existing-structure]], use legacy imports, or continue
+  using `#include`s.  
+
+**Pros:** This would be easy to use for users and would still allow us to
+reorganize the standard library into finer grained modules in the future.
+
+**Cons:** The standard library has a number of global dynamic constructors (such
+as the ones in iostreams) and auxiliary dependencies (filesystem libraries,
+regex libraries, etc); it would be undesirable to encourage people to pay for
+these as they may not be using them.
+
+As with [[#cpp20-modularize-existing-structure]], this approach is only sensible
+  if we are able to move the definition of a standard library entity from one
+  module to another without breaking ABI compatibility.
+
+## Attempt to Reorganize the Entire Standard Library in C++20 ## {#cpp20-reorganize}
+
+In this approach, we would use the remaining time in the C++20 cycle to
+  reorganize the structure of the standard library to address the problems
+  identified in [[#need-for-reorganization]].
+This effort would likely need to include a redefinition of the freestanding
+  standard library subset, as this would likely be our only chance to do so.
+So, this would probably be a combination of [[P0581R1]], [[P0829R3]], and
+  [[P1376R0]].
+
+**Pros:** We would have a complete solution in C++20 instead of a middleground
+  approach with limitations.
+
+**Cons:** This option has significant schedule risk, limited time for us to
+  obtain field experience, likely closes the door for any post C++20
+  reorganization, and presents the highest risk of shipping something that we
+  are unable to change later.
+
+<pre class="biblio">
+{
+  "cpp": {
+    "authors": [ "Richard Smith" ],
+    "href": "http://eel.is/c++draft",
+    "title": "Top of Trunk Working Draft, Standard for Programming Language C++",
+    "publisher": "wg21"
+  },
+  "2018-Jacksonville-LEWG-P0581R0-Minutes": {
+    "href": "http://wiki.edg.com/bin/view/Wg21jacksonville2018/P0581",
+    "title": "2018 Jacksonville C++ Committee Meeting - LEWG P0581R0 Minutes",
+    "publisher": "wg21"
+  }, 
+  "2018-San-Diego-EWG-P1212R0-Minutes": {
+    "href": "http://wiki.edg.com/bin/view/Wg21sandiego2018/P1212R0-San18",
+    "title": "2018 San Diego C++ Committee Meeting - EWG P1212R0 Minutes",
+    "publisher": "wg21"
+  },
+  "StackOverflow-Transitive-Includes-Question": {
+    "href": "https://stackoverflow.com/questions/40819566/why-clang-on-mac-automatically-includes-some-missing-headers",
+    "title": "StackOverflow: Why does Clang on Mac automatically include some missing headers?"
+  }
+}
+</pre>
