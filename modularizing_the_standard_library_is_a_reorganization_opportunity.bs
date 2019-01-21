@@ -6,9 +6,9 @@ Distributed under the Boost Software License v1.0 (boost.org/LICENSE_1_0.txt)
 -->
 <pre class='metadata'>
 Title: Modularizing the Standard Library is a Reorganization Opportunity
-Shortname: D1453
+Shortname: P1453
 Revision: 0
-Status: D
+Status: P
 Group: WG21
 Audience: LEWG
 Editor: Bryce Adelstein Lelbach, NVIDIA, brycelelbach@gmail.com
@@ -111,36 +111,37 @@ But, what will `/* ??? */` be?
 
 While we appear to have achieved consensus on a design for the modules language
   feature, our plan for how and when the C++ standard library will be modularized
-  is not as mature.
+  are not as mature.
 Some proposals have been made ([[P0581R1]] and [[P1212R0]]) and preliminary
   discussions have taken place ([[2018-Jacksonville-LEWG-P0581R0-Minutes]] and
-  [[2018-San-Diego-EWG-P1212R0-Minutes]]).
+  [[2018-San-Diego-EWG-P1212R0-Minutes]]), but we haven't committed to a path
+  yet.
+Given that the C++20 cycle is nearly over, it's time for us to make a decision
+  on our strategy for standard library modules in C++20.
 
 # The Need for Reorganization # {#need-for-reorganization}
 
 Modules are a sorely needed opportunity to reorganize the standard library.
-The header-based partitioning of the standard library that we have today has not
-  aged well with the past two decades.
+Today's header-based partitioning of the standard library has not aged well
+  over the past two decades.
 Some of the pain points include:
 
 - **Transitive Includes:** Standard library headers are allowed to include other
       standard library headers.
     There is often implementation divergence in the use of transitive includes.
-    <a spec="StackOverflow-Transitive-Includes-Question" spec-section="#">When users unintentionally rely on transitive includes, they can end up with non portable code.</a>
-- **Overly Coarse Includes:** Over the years, some standard library headers have
-      incrementally evolved into large repositories of facilities that do not
-      necessarily need to be coupled.
+    <a spec="StackOverflow-Transitive-Includes-Question" spec-section="#">When users rely on transitive includes, they can end up with non portable code.</a>
+- **Overly Coarse Includes:** Some standard library headers have evolved into
+      repositories of facilities that do not necessarily belong together.
     For example, in C++98, `<functional>` was a simple header with a simple
       mission: provide unary and binary function objects for operators.
-    Including `<functional>` with GCC 4.1 compiling in C++03 mode added a mere
-      600 lines to your code.
-    Today, `<functional>` is contains a broad set of functional, including
-      `std::function` (which needs type traits and memory management facilities)
-      and `std::*_searcher`s (which need string processing facilities).
+    Including `<functional>` with GCC 4.1 compiling in C++03 mode added 600
+      lines to your code.
+    Today, `<functional>` contains many things, including `std::function`
+      (which needs type traits and memory management facilities) and
+      `std::*_searcher`s (which need string processing facilities).
     Including `<functional>` with GCC 8 compiling in C++11 mode adds 44,691
       lines to your code.
     That's a lot if all you needed was `std::plus`.
-    Another example of this issue is the ubiquitous `<utility>` header.
 - **Lack of Logical Partitioning:** It is common for C++ programmers to think of
       each standard library header as encapsulating a component of the standard
       library.
@@ -151,23 +152,27 @@ Some of the pain points include:
     Most sequence algorithms are found in `<algorithm>`, but some are found in
       `<numeric>` and `<memory>`.
     This has even been confusing to the committee, which has often forgot to
-      apply updates applicable to all algorithms to the ones in `<numeric>` and
+      apply changes applicable to all algorithms to the ones in `<numeric>` and
       `<memory>`.
-    In fact, recently <a spec="cpp" spec-section="/numeric.ops.overview">the section in the standard for the `<numeric>` header</a>
-      has been moved into the `[algorithms]` clause so that it will no longer
-      be overlooked.
-    Additionally, there are some important standard library facilities that live
-      in omnibus headers and can be difficult to locate.
-    Where is `std::pair` (answer: `<utility>`, not `<pair>`)?
-    Where is `std::unique_ptr` (answer: `<memory>`, not `<unique_ptr>`)?
+    We even moved <a spec="cpp" spec-section="/numeric.ops.overview">the section in
+      the standard for the `<numeric>` header</a> into the `[algorithms]`
+      clause recently so that it will no longer be overlooked.
+    Additionally, some standard library facilities that live in omnibus headers
+      and can be difficult to locate.
+    Where is `std::pair`? In `<utility>`, not `<pair>`.
+    Where is `std::unique_ptr`? In `<memory>`, not `<unique_ptr>`.
 - **Freestanding:** There is general agreement on the committee that the current
       definition of the freestanding standard library subset is not particularly
       useful.
     At the same time, there are a number of constituencies (embedded,
-      high-frequency trading, kernel/OS development, parallel programming) that
-      desire a useful freestanding standard library and would like to see
-      freestanding overhauled in a future standard ([[P0829R3]], [[P1212R0]],
-      [[P1376R0]]).
+      kernel/OS development, parallel programming) that desire a useful
+      freestanding standard library and would like to see freestanding
+      overhauled in a future standard ([[P0829R3]], [[P1212R0]], [[P1376R0]]).
+
+All of these issues could be solved by a careful reorganization of the standard
+  library.
+The only reason we have not undertaken such a reorganization has been a lack of
+  opportunity before modules.
 
 # A Rare Opportunity # {#opportunity}
 
@@ -175,12 +180,16 @@ This opportunity to reorganize the standard library is a rare one.
 Standard library implementations make strong backwards compatibility guarantees,
   so we cannot just decide to move entities from one header to another.
 
-Modules, however, move us away from a header-based model entirely, which gives us
-  a chance to repartition the standard library into more sensible subsets.
+Modules, however, move us away from a header-based model entirely.
+When we modularize the standard library, we are not bound to the existing
+  structure of our current header-based model.
+Thee moduarlized standard library can be repartition into more sensible subsets.
+
 However, we only have one chance to do this.
 Once we ship a modularized standard library, we will find ourselves in the same
-  situation that we have today - we will be unable to reorganize things without
-  breaking backwards compatibility.
+  situation that we have today.
+We will be unable to reorganize things without breaking backwards
+  compatibility.
 
 This may be our only chance in the lifetime of C++ to reorganize the standard
   library.
@@ -189,11 +198,11 @@ Thus, it is imperative that we get it right.
 ## Time is Limited ## {#time-limited}
 
 We are nearing the end of the C++20 development cycle.
-We plan to ship a committee draft of the C++20 standard approximately 6 months
+We plan to ship a committee draft of the C++20 standard six months
   from the authoring of this paper.
 
 Integrating new language features into the standard library is one of the harder
-  parts of our standardization work, due in part to its size.
+  parts of our standardization work.
 Recently, we have wisely decided to exercise caution when rolling out new
   language features in the standard library.
 
@@ -201,25 +210,24 @@ Take concepts as an example.
 In C++20, we have a core concepts library, and a major new piece of the standard
   library, ranges, uses concepts.
 However, we have not attempted to go through the entire standard library and
-  deployed concepts everywhere in C++20.
+  deploy concepts everywhere we can for C++20.
 Additionally, we have been conservative in the use of concepts for new library
-  features for C++20; as far as this author is aware, only the ranges library
-  will use concepts.
+  features for C++20.
+As far as this author is aware, only the new ranges library will use concepts.
 It seems likely that in future standards, in places where proper constrained
   template parameters are desirable, we will either update existing facilities
-  to use concepts (when this can be done without breaking backwards compatibility)
-  or introduce new improved versions of those facilities.
+  to use concepts or introduce new improved versions of those facilities.
 
 While it may seem counter-intuitive for the standard library to not aggressively
   embrace new language features, it is in fact the right thing to do in many
   cases.
 While the impact of new language feature on the library should be considered
   and evaluated, we should neither make new language features wait for deployment
-  within the standard library nor rush deployment within the standard library.
+  within the standard library nor rush that deployment to not delay the feature.
 When a language feature is ready, so long as we are confident that we will be
-  able to complete deployment of the feature into the standard library in the
+  able to complete deployment of the feature in the standard library in the
   future, we should be ready to ship it.
-We should not the perfect be the enemy of the good.
+We should not let the perfect be the enemy of the good.
 
 # Options for a C++20 Modular Standard Library # {#cpp20-options}
 
@@ -227,7 +235,8 @@ We should not the perfect be the enemy of the good.
 
 The first and most conservative option would be to not modularize the standard
   library in C++20.
-Users would access the standard library via legacy imports or via `#include`.
+Users would access the standard library via legacy imports or coontinue
+  `#include`s.
 
 **Pros:** This approach preserves the most freedom for future modularization and
   presents no risk of shipping something we are unable to change later.
@@ -255,7 +264,7 @@ This prefix could be spelled differently, possibly `std.legacy`, `std.old`, or
   small amount of risk of shipping something we are unable to change later.
 
 **Cons:** The `std.header` modules we'd be shipping would be difficult to get rid
-  of; they'd co-exist with whatever new standard library modules we introduce in
+  of. They'd co-exist with whatever new standard library modules we introduce in
   the future and potentially preserve some of the problems with the existing
   standard library structure identified in [[#need-for-reorganization]].
 
@@ -268,19 +277,19 @@ E.g. If entity `foo` is currently defined in `std.header.bar`, in the future can
 
 ## One Big Module for C++20 ## {#cpp20-one-module}
 
-One option would be to introduce a big `std` module that includes everything in
-  the standard library.
+One option would be to introduce a `std` module that includes everything in the
+  standard library.
 For finer grained usage, users could either use the modules from
   [[#cpp20-modularize-existing-structure]], use legacy imports, or continue
   using `#include`s.  
 
-**Pros:** This would be easy to use for users and would still allow us to
-reorganize the standard library into finer grained modules in the future.
+**Pros:** This would be easy to use and would still allow us to reorganize the
+  standard library into finer grained modules in the future.
 
-**Cons:** The standard library has a number of global dynamic constructors (such
-as the ones in iostreams) and auxiliary dependencies (filesystem libraries,
-regex libraries, etc); it would be undesirable to encourage people to pay for
-these as they may not be using them.
+**Cons:** The standard library has a number of global dynamic constructors
+  (such as the ones in iostreams) and auxiliary dependencies (filesystem
+  libraries, regex libraries, etc). It would be undesirable to encourage people
+  to pay for these as they may not be using them.
 
 As with [[#cpp20-modularize-existing-structure]], this approach is only sensible
   if we are able to move the definition of a standard library entity from one
@@ -300,7 +309,7 @@ So, this would probably be a combination of [[P0581R1]], [[P0829R3]], and
   approach with limitations.
 
 **Cons:** This option has significant schedule risk, limited time for us to
-  obtain field experience, likely closes the door for any post C++20
+  obtain field experience, closes the door for any post C++20
   reorganization, and presents the highest risk of shipping something that we
   are unable to change later.
 
